@@ -1,0 +1,16 @@
+# ignore sensitve signed files
+*.signed
+*.signed/
+
+# ignore gnpg
+gnupg
+
+archives
+
+# ignore all compiled elisp
+*.elc
+*.gif
+
+
+# Include only files and directories matching the pattern
+![a-zA-Z0-9_@+-]*-[0-9]*.**
