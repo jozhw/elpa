@@ -14,11 +14,56 @@
  (put 'denote-directory 'safe-local-variable (lambda (val) (or (stringp val) (eq val 'local) (eq val 'default-directory))))
  (put 'denote-known-keywords 'safe-local-variable #'listp)
  (put 'denote-infer-keywords 'safe-local-variable (lambda (val) (or val (null val))))
+(autoload 'denote-sort-files "denote" "\
+Returned sorted list of Denote FILES.
+
+With COMPONENT as a symbol among `denote-sort-components',
+sort files based on the corresponding file name component.
+
+With COMPONENT as the symbol of a function, use it to perform the
+sorting.  In this case, the function is called with two arguments, as
+described by `sort'.
+
+With COMPONENT as a nil value keep the original date-based
+sorting which relies on the identifier of each file name.
+
+With optional REVERSE as a non-nil value, reverse the sort order.
+
+(fn FILES COMPONENT &optional REVERSE)")
+(autoload 'denote-sort-dired "denote" "\
+Produce Dired buffer with sorted files from variable `denote-directory'.
+When called interactively, prompt for FILES-MATCHING-REGEXP and,
+depending on the value of the user option `denote-sort-dired-extra-prompts',
+also prompt for SORT-BY-COMPONENT, REVERSE, and EXCLUDE-REGEXP.
+
+1. FILES-MATCHING-REGEXP limits the list of Denote files to
+   those matching the provided regular expression.
+
+2. SORT-BY-COMPONENT sorts the files by their file name component (one
+   among `denote-sort-components').  If it is nil, sorting is performed
+   according to the user option `denote-sort-dired-default-sort-component',
+   falling back to the identifier.
+
+3. REVERSE is a boolean to reverse the order when it is a non-nil value.
+   If `denote-sort-dired-extra-prompts' is configured to skip this
+   prompt, then the sorting is done according to the user option
+   `denote-sort-dired-default-reverse-sort', falling back to
+   nil (i.e. no reverse sort).
+
+4. EXCLUDE-REGEXP excludes the files that match the given regular
+   expression.  This is done after FILES-MATCHING-REGEXP and
+   OMIT-CURRENT have been applied.
+
+When called from Lisp, the arguments are a string, a symbol among
+`denote-sort-components', a non-nil value, and a string, respectively.
+
+(fn FILES-MATCHING-REGEXP SORT-BY-COMPONENT REVERSE EXCLUDE-REGEXP)" t)
 (autoload 'denote "denote" "\
 Create a new note with the appropriate metadata and file name.
 
-Run the `denote-after-new-note-hook' after creating the new note
-and return its path.
+Run the `denote-after-new-note-hook' after creating the new note and
+return its path.  Before returning the path, determine what needs to be
+done to the buffer, in accordance with the user option `denote-kill-buffers'.
 
 When called interactively, the metadata and file name are prompted
 according to the value of `denote-prompts'.
@@ -30,7 +75,8 @@ When called from Lisp, all arguments are optional.
 - KEYWORDS is a list of strings.  The list can be empty or the
   value can be set to nil.
 
-- FILE-TYPE is a symbol among those described in `denote-file-type'.
+- FILE-TYPE is a symbol among those described in the user option
+  `denote-file-type'.
 
 - DIRECTORY is a string representing the path to either the
   value of the variable `denote-directory' or a subdirectory
@@ -92,7 +138,11 @@ This is the equivalent of calling `denote' when `denote-prompts'
 has the `signature' prompt appended to its existing prompts." t)
 (function-put 'denote-signature 'interactive-only 't)
 (autoload 'denote-region "denote" "\
-Call `denote' and insert therein the text of the active region." t)
+Call `denote' and insert therein the text of the active region.
+
+Note that, currently, `denote-save-buffers' and
+`denote-kill-buffers' are NOT respected.  The buffer is not
+saved or killed at the end of `denote-region'." t)
 (function-put 'denote-region 'interactive-only 't)
 (autoload 'denote-open-or-create "denote" "\
 Visit TARGET file in variable `denote-directory'.
@@ -161,8 +211,12 @@ remove that file name component.  For example, if a TITLE prompt
 is available and FILE is 20240211T093531--some-title__keyword1.org
 then rename FILE to 20240211T093531__keyword1.org.
 
-If a file name component is present, but there is no entry for it in
-`denote-prompts', keep it as-is.
+In interactive use, if there is no entry for a file name
+component in `denote-prompts', keep it as-is.
+
+When called from Lisp, the special symbol `keep-current' can be
+used for the TITLE, KEYWORDS, SIGNATURE and DATE parameters to
+keep them as-is.
 
 [ NOTE: Please check with your minibuffer user interface how to
   provide an empty input.  The Emacs default setup accepts the
@@ -189,10 +243,13 @@ double-check the result, such as by invoking the command
 in the front matter should not affect the rest of the front
 matter.
 
-If the file does not have front matter but is among the supported
-file types (per `denote-file-type'), add front matter to the top
-of it and leave the buffer unsaved for further inspection.  Save
-the buffer if `denote-save-buffers' is non-nil.
+If the file does not have front matter but is among the supported file
+types (per the user option `denote-file-type'), add front matter to the
+top of it and leave the buffer unsaved for further inspection.  Save the
+buffer if `denote-save-buffers' is non-nil.
+
+When `denote-kill-buffers' is t or `on-rename', kill the buffer
+if it was not already being visited before the rename operation.
 
 For the front matter of each file type, refer to the variables:
 
@@ -214,7 +271,7 @@ file-naming scheme.
 For a version of this command that works with multiple files
 one-by-one, use `denote-dired-rename-files'.
 
-(fn FILE &optional TITLE KEYWORDS SIGNATURE DATE)" t)
+(fn FILE TITLE KEYWORDS SIGNATURE DATE)" t)
 (autoload 'denote-dired-rename-files "denote" "\
 Rename Dired marked files same way as `denote-rename-file'.
 Rename each file in sequence, making all the relevant prompts.
@@ -242,8 +299,8 @@ Specifically, do the following:
   that may exist while removing keywords that do exist if
   KEYWORDS is empty;
 
-- add or rewrite existing front matter to the underlying file, if
-  it is recognized as a Denote note (per `denote-file-type'),
+- add or rewrite existing front matter to the underlying file, if it is
+  recognized as a Denote note (per the user option `denote-file-type'),
   such that it includes the new keywords.
 
 Construct the file name in accordance with the user option
@@ -264,24 +321,31 @@ Like `denote-dired-rename-marked-files-with-keywords' to only remove keywords." 
 (function-put 'denote-dired-rename-marked-files-remove-keywords 'interactive-only 't)
 (autoload 'denote-rename-file-using-front-matter "denote" "\
 Rename FILE using its front matter as input.
-When called interactively, FILE is the return value of the
-function `buffer-file-name' which is subsequently inspected for
-the requisite front matter.  It is thus implied that the FILE has
-a file type that is supported by Denote, per `denote-file-type'.
+When called interactively, FILE is the variable `buffer-file-name' or
+the Dired file at point, which is subsequently inspected for the
+requisite front matter.  It is thus implied that the FILE has a file
+type that is supported by Denote, per the user option `denote-file-type'.
 
-Never modify the identifier of the FILE, if any, even if it is
-edited in the front matter.  Denote considers the file name to be
-the source of truth in this case to avoid potential breakage with
-typos and the like.
+The values of `denote-rename-confirmations',
+`denote-save-buffers' and `denote-kill-buffers' are respected.
 
-The values of `denote-rename-confirmations' and `denote-save-buffers'
-are respected.  Though there is no prompt to confirm the rewrite of the
-front matter, since this is already done by the user.
+Only the front matter lines that appear in the front matter template (as
+defined in `denote-file-types') will be handled.
 
-The identifier of the file, if any, is never modified even if it
-is edited in the front matter: Denote considers the file name to
-be the source of truth in this case, to avoid potential breakage
-with typos and the like.
+To change the identifier (date) of the note with this command, the
+identifier line (if present) of the front matter must be modified.
+Modifying the date line has no effect.
+
+While this command generally does not modify the front matter, there are
+exceptions.  The value of the `date' line will follow that of the
+`identifier' line.  If they are both in the front matter template and
+the `date' line is missing, it will be added again.  Similarly, if they
+are both in the front matter template and the `date' line is present and
+the `identifier' line has been removed, the `date' line will be removed
+as well.  Also, if the keywords are out of order and
+`denote-sort-keywords' is non-nil, they will be sorted.  There will be a
+prompt for this if `denote-rename-confirmations' contains
+`rewrite-front-matter'.
 
 Construct the file name in accordance with the user option
 `denote-file-name-components-order'.
@@ -291,51 +355,11 @@ Construct the file name in accordance with the user option
 Call `denote-rename-file-using-front-matter' over the Dired marked files.
 Refer to the documentation of that command for the technicalities.
 
-Marked files must count as notes for the purposes of Denote,
-which means that they at least have an identifier in their file
-name and use a supported file type, per `denote-file-type'.
-Files that do not meet this criterion are ignored because Denote
-cannot know if they have front matter and what that may be." '(dired-mode))
-(autoload 'denote-add-front-matter "denote" "\
-Insert front matter at the top of FILE.
-
-When called interactively, FILE is the return value of the
-function `buffer-file-name'.  FILE is checked to determine
-whether it is a note for Denote's purposes.
-
-TITLE is a string.  Interactively, it is the user input at the
-minibuffer prompt.
-
-KEYWORDS is a list of strings.  Interactively, it is the user
-input at the minibuffer prompt.  This one supports completion for
-multiple entries, each separated by the `crm-separator' (normally
-a comma).
-
-The purpose of this command is to help the user generate new
-front matter for an existing note (perhaps because the user
-deleted the previous one and could not undo the change).
-
-This command does not rename the file (e.g. to update the
-keywords).  To rename a file by reading its front matter as
-input, use `denote-rename-file-using-front-matter'.
-
-Note that this command is useful only for existing Denote notes.
-If the user needs to convert a generic text file to a Denote
-note, they can use one of the command which first rename the file
-to make it comply with our file-naming scheme and then add the
-relevant front matter.
-
-[ NOTE: Please check with your minibuffer user interface how to
-  provide an empty input.  The Emacs default setup accepts the
-  empty minibuffer contents as they are, though popular packages
-  like `vertico' use the first available completion candidate
-  instead.  For `vertico', the user must either move one up to
-  select the prompt and then type RET there with empty contents,
-  or use the command `vertico-exit-input' with empty contents.
-  That Vertico command is bound to M-RET as of this writing on
-  2024-02-29 09:24 +0200. ]
-
-(fn FILE TITLE KEYWORDS)" t)
+Marked files must count as notes for the purposes of Denote, which means
+that they at least have an identifier in their file name and use a
+supported file type, per the user option `denote-file-type'.  Files that
+do not meet this criterion are ignored because Denote cannot know if
+they have front matter and what that may be." '(dired-mode))
 (autoload 'denote-change-file-type-and-front-matter "denote" "\
 Change file type of FILE and add an appropriate front matter.
 
@@ -366,19 +390,19 @@ Fontify all Denote-style file names.
 Add this or `denote-dired-mode-in-directories' to
 `dired-mode-hook'.
 
-This is a minor mode.  If called interactively, toggle the
-`Denote-Dired mode' mode.  If the prefix argument is positive,
-enable the mode, and if it is zero or negative, disable the mode.
+This is a minor mode.  If called interactively, toggle the `Denote-Dired
+mode' mode.  If the prefix argument is positive, enable the mode, and if
+it is zero or negative, disable the mode.
 
-If called from Lisp, toggle the mode if ARG is `toggle'.  Enable
-the mode if ARG is nil, omitted, or is a positive number.
-Disable the mode if ARG is a negative number.
+If called from Lisp, toggle the mode if ARG is `toggle'.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
 
 To check whether the minor mode is enabled in the current buffer,
-evaluate `denote-dired-mode'.
+evaluate the variable `denote-dired-mode'.
 
-The mode's hook is called both when the mode is enabled and when
-it is disabled.
+The mode's hook is called both when the mode is enabled and when it is
+disabled.
 
 (fn &optional ARG)" t)
 (autoload 'denote-dired-mode-in-directories "denote" "\
@@ -395,10 +419,9 @@ case, derive FILE-TYPE from the current buffer.  FILE-TYPE is used to
 determine the format of the link.
 
 Return the DESCRIPTION of the link in the format specified by
-`denote-link-description-function'.  The default value of that variable,
-`denote-link-description-with-signature-and-title', uses the active
-region as the DESCRIPTION, or the FILE signature in addition to its
-title, or the FILE title.
+`denote-link-description-format'.  The default is to return the text of
+the active region or the title of the note (plus the signature if
+present).
 
 With optional ID-ONLY as a non-nil argument, such as with a universal
 prefix (\\[universal-argument]), insert links with just the identifier
@@ -408,32 +431,15 @@ and no further description.  In this case, the link format is always
 If the DESCRIPTION is empty, format the link the same as with ID-ONLY.
 
 When called from Lisp, FILE is a string representing a full file system
-path.  FILE-TYPE is a symbol as described in `denote-file-type'.
-DESCRIPTION is a string.  Whether the caller treats the active region
-specially, is up to it.
-
-Also see `denote-link-with-signature'.
+path.  FILE-TYPE is a symbol as described in the user option
+`denote-file-type'.  DESCRIPTION is a string.  Whether the caller treats
+the active region specially, is up to it.
 
 (fn FILE FILE-TYPE DESCRIPTION &optional ID-ONLY)" t)
-(autoload 'denote-link-with-signature "denote" "\
-Insert link to file with signature.
-Prompt for file using minibuffer completion, limiting the list of
-candidates to files with a signature in their file name.
-
-By default, the description of the link includes the signature,
-if present, followed by the file's title, if any.
-
-For more advanced uses with Lisp, refer to the `denote-link'
-function." t)
-(function-put 'denote-link-with-signature 'interactive-only 't)
 (autoload 'denote-find-link "denote" "\
-Use minibuffer completion to visit linked file." t)
+Use minibuffer completion to visit linked file.
+Also see `denote-find-backlink'." t)
 (function-put 'denote-find-link 'interactive-only 't)
-(autoload 'denote-find-backlink "denote" "\
-Use minibuffer completion to visit backlink to current file.
-
-Like `denote-find-link', but select backlink to follow." t)
-(function-put 'denote-find-backlink 'interactive-only 't)
 (autoload 'denote-link-after-creating "denote" "\
 Create new note in the background and link to it directly.
 
@@ -481,6 +487,37 @@ consists of just the identifier.  Else try to also include the
 file's title.  This has the same meaning as in `denote-link'.
 
 (fn TARGET &optional ID-ONLY)" t)
+(autoload 'denote-grep "denote" "\
+Search QUERY in the content of Denote files.
+QUERY should be a regular expression accepted by `xref-search-program'.
+
+The files to search for are those returned by `denote-directory-files'
+with a non-nil TEXT-ONLY argument.
+
+Results are put in a buffer which allows folding and further
+filtering (see the manual for details).
+
+You can insert a link to a grep search in any note by using the command
+`denote-query-contents-link'.
+
+(fn QUERY)" t)
+(autoload 'denote-grep-marked-dired-files "denote" "\
+Do the equivalent of `denote-grep' for QUERY in marked Dired files.
+
+(fn QUERY)" t)
+(autoload 'denote-grep-files-referenced-in-region "denote" "\
+Perform `denote-grep' QUERY in files referenced between START and END.
+When called interactively, prompt for QUERY.  Also get START and END as
+the buffer positions that delimit the marked region.  When called from
+Lisp, QUERY is a string, while START and END are buffer positions, as
+integers.
+
+Find references to files by their identifier.  This includes links with
+just the identifier (as described in `denote-link' and related), links
+written by an Org dynamic block (see the `denote-org' package), or even
+file listings such as those of `dired' and the command-line `ls' program.
+
+(fn QUERY START END)" t)
 (autoload 'denote-backlinks "denote" "\
 Produce a buffer with backlinks to the current note.
 
@@ -489,31 +526,90 @@ context of each link if the user option `denote-backlinks-show-context'
 is non-nil.
 
 Place the buffer below the current window or wherever the user option
-`denote-link-backlinks-display-buffer-action' specifies." t)
+`denote-backlinks-display-buffer-action' specifies." t)
+(autoload 'denote-find-backlink "denote" "\
+Use minibuffer completion to visit backlink to current file.
+Visit the file itself, not the location where the link is.  For a
+context-sensitive operation, use `denote-find-backlink-with-location'.
+
+Alo see `denote-find-link'." t)
+(function-put 'denote-find-backlink 'interactive-only 't)
+(autoload 'denote-find-backlink-with-location "denote" "\
+Like `denote-find-backlink' but jump to the exact location of the link." t)
+(function-put 'denote-find-backlink-with-location 'interactive-only 't)
+(autoload 'denote-query-contents-link "denote" "\
+Insert query link for file contents.
+Prompt for QUERY or use the text of the active region.  When the user
+follows this link, place any matches in a separate buffer (using the
+built-in Xref mechanism).  This is the equivalent of a Unix grep command
+across the variable `denote-directory'.
+
+(fn QUERY)" t)
+(autoload 'denote-query-filenames-link "denote" "\
+Insert query link for file names.
+Prompt for QUERY or use the text of the active region.  When the user
+follows this link, place any matches in a separate buffer (using the
+built-in Dired mechanism).  This is the equivalent of a Unix find
+command across the variable `denote-directory'.
+
+(fn QUERY)" t)
+(autoload 'denote-fontify-links-mode-maybe "denote" "\
+Enable `denote-fontify-links-mode' in a denote file unless in `org-mode'.")
+(autoload 'denote-fontify-links-mode "denote" "\
+A minor mode to fontify and fold Denote links.
+
+Enabled this mode only when the current buffer is a Denote note and the
+major mode is not `org-mode' (or derived therefrom).  Consider using
+`denote-fontify-links-mode-maybe' for this purpose.
+
+This is a minor mode.  If called interactively, toggle the
+`Denote-Fontify-Links mode' mode.  If the prefix argument is positive,
+enable the mode, and if it is zero or negative, disable the mode.
+
+If called from Lisp, toggle the mode if ARG is `toggle'.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
+
+To check whether the minor mode is enabled in the current buffer,
+evaluate the variable `denote-fontify-links-mode'.
+
+The mode's hook is called both when the mode is enabled and when it is
+disabled.
+
+(fn &optional ARG)" t)
 (autoload 'denote-add-links "denote" "\
-Insert links to all notes matching REGEXP.
-Use this command to reference multiple files at once.
-Particularly useful for the creation of metanotes (read the
-manual for more on the matter).
+Insert links to all files whose file names match REGEXP.
+Use this command to reference multiple files at once.  Particularly
+useful for the creation of metanotes (read the manual for more on the
+matter).
 
 Optional ID-ONLY has the same meaning as in `denote-link': it
 inserts links with just the identifier.
 
 (fn REGEXP &optional ID-ONLY)" t)
+(autoload 'denote-link-to-file-with-contents "denote" "\
+Link to a file whose contents match QUERY.
+This is similar to `denote-link', except that the file prompt is limited
+to files matching QUERY.  Optional ID-ONLY has the same meaning as in
+`denote-link'.
+
+(fn QUERY &optional ID-ONLY)" t)
+(autoload 'denote-link-to-all-files-with-contents "denote" "\
+Link to all files whose contents match QUERY.
+This is similar to `denote-add-links', except it searches inside file
+contents, not file names.  Optional ID-ONLY has the same meaning as in
+`denote-link' and `denote-add-links'.
+
+(fn QUERY &optional ID-ONLY)" t)
 (autoload 'denote-link-dired-marked-notes "denote" "\
 Insert Dired marked FILES as links in BUFFER.
 
-FILES are Denote notes, meaning that they have our file-naming
-scheme, are writable/regular files, and use the appropriate file
-type extension (per `denote-file-type').  Furthermore, the marked
-files need to be inside the variable `denote-directory' or one of
-its subdirectories.  No other file is recognised (the list of
-marked files ignores whatever does not count as a note for our
-purposes).
+FILES conform with the Denote file-naming scheme, such that they can be
+linked to using the `denote:' link type.
 
 The BUFFER is one which visits a Denote note file.  If there are
-multiple buffers, prompt with completion for one among them.  If
-there isn't one, throw an error.
+multiple BUFFER candidates in buffers, prompt with completion for
+one among them.  If there is none, throw an error.
 
 With optional ID-ONLY as a prefix argument, insert links with
 just the identifier (same principle as with `denote-link').
@@ -533,28 +629,31 @@ or call the function `denote-menu-bar-mode'.")
 Show Denote menu bar.
 
 This is a global minor mode.  If called interactively, toggle the
-`Denote-Menu-Bar mode' mode.  If the prefix argument is positive,
-enable the mode, and if it is zero or negative, disable the mode.
+`Denote-Menu-Bar mode' mode.  If the prefix argument is positive, enable
+the mode, and if it is zero or negative, disable the mode.
 
-If called from Lisp, toggle the mode if ARG is `toggle'.  Enable
-the mode if ARG is nil, omitted, or is a positive number.
-Disable the mode if ARG is a negative number.
+If called from Lisp, toggle the mode if ARG is `toggle'.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
 
 To check whether the minor mode is enabled in the current buffer,
 evaluate `(default-value \\='denote-menu-bar-mode)'.
 
-The mode's hook is called both when the mode is enabled and when
-it is disabled.
+The mode's hook is called both when the mode is enabled and when it is
+disabled.
 
 (fn &optional ARG)" t)
 (autoload 'denote-link-ol-follow "denote" "\
 Find file of type `denote:' matching LINK.
-LINK is the identifier of the note, optionally followed by a
-query option akin to that of standard Org `file:' link types.
-Read Info node `(org) Query Options'.
+LINK is the identifier of the note, optionally followed by a file search
+option akin to that of standard Org `file:' link types.  Read Info
+node `(org) Query Options'.
 
-Uses the function `denote-directory' to establish the path to the
-file.
+If LINK is not an identifier, then it is not pointing to a file but to a
+query of file contents or file names (see the commands
+`denote-query-contents-link' and `denote-query-filenames-link').
+
+Uses the function `denote-directory' to establish the path to the file.
 
 (fn LINK)")
 (autoload 'denote-link-ol-complete "denote" "\
@@ -563,14 +662,18 @@ This lets the user complete a link through the `org-insert-link'
 interface by first selecting the `denote:' hyperlink type.")
 (autoload 'denote-link-ol-store "denote" "\
 Handler for `org-store-link' adding support for denote: links.
-Also see the user option `denote-org-store-link-to-heading'.")
+Optional INTERACTIVE? is used by `org-store-link'.
+
+Also see the user option `denote-org-store-link-to-heading'.
+
+(fn &optional INTERACTIVE?)")
 (autoload 'denote-link-ol-export "denote" "\
 Export a `denote:' link from Org files.
 The LINK, DESCRIPTION, and FORMAT are handled by the export
 backend.
 
 (fn LINK DESCRIPTION FORMAT)")
-(eval-after-load 'org `(funcall ',(lambda nil (with-no-warnings (org-link-set-parameters "denote" :follow #'denote-link-ol-follow :face 'denote-faces-link :complete #'denote-link-ol-complete :store #'denote-link-ol-store :export #'denote-link-ol-export)))))
+(eval-after-load 'org `(funcall ',(lambda nil (with-no-warnings (org-link-set-parameters "denote" :follow #'denote-link-ol-follow :face #'denote-get-link-face :help-echo #'denote-link-ol-help-echo :complete #'denote-link-ol-complete :store #'denote-link-ol-store :export #'denote-link-ol-export)))))
 (autoload 'denote-org-capture "denote" "\
 Create new note through `org-capture-templates'.
 Use this as a function that returns the path to the new file.
@@ -610,194 +713,6 @@ TEMPLATE as templates must exist and are specified in the user
 option `denote-templates'.
 
 (fn &optional TITLE KEYWORDS SUBDIRECTORY DATE TEMPLATE)")
-(register-definition-prefixes "denote" '("denote-"))
-
-
-;;; Generated autoloads from denote-journal-extras.el
-
-(autoload 'denote-journal-extras-new-entry "denote-journal-extras" "\
-Create a new journal entry in variable `denote-journal-extras-directory'.
-Use `denote-journal-extras-keyword' as a keyword for the newly
-created file.  Set the title of the new entry according to the
-value of the user option `denote-journal-extras-title-format'.
-
-With optional DATE as a prefix argument, prompt for a date.  If
-`denote-date-prompt-use-org-read-date' is non-nil, use the Org
-date selection module.
-
-When called from Lisp DATE is a string and has the same format as
-that covered in the documentation of the `denote' function.  It
-is internally processed by `denote-parse-date'.
-
-(fn &optional DATE)" t)
-(autoload 'denote-journal-extras-new-or-existing-entry "denote-journal-extras" "\
-Locate an existing journal entry or create a new one.
-A journal entry is one that has `denote-journal-extras-keyword' as
-part of its file name.
-
-If there are multiple journal entries for the current date,
-prompt for one using minibuffer completion.  If there is only
-one, visit it outright.  If there is no journal entry, create one
-by calling `denote-journal-extra-new-entry'.
-
-With optional DATE as a prefix argument, prompt for a date.  If
-`denote-date-prompt-use-org-read-date' is non-nil, use the Org
-date selection module.
-
-When called from Lisp, DATE is a string and has the same format
-as that covered in the documentation of the `denote' function.
-It is internally processed by `denote-parse-date'.
-
-(fn &optional DATE)" t)
-(autoload 'denote-journal-extras-link-or-create-entry "denote-journal-extras" "\
-Use `denote-link' on journal entry, creating it if necessary.
-A journal entry is one that has `denote-journal-extras-keyword' as
-part of its file name.
-
-If there are multiple journal entries for the current date,
-prompt for one using minibuffer completion.  If there is only
-one, link to it outright.  If there is no journal entry, create one
-by calling `denote-journal-extra-new-entry' and link to it.
-
-With optional DATE as a prefix argument, prompt for a date.  If
-`denote-date-prompt-use-org-read-date' is non-nil, use the Org
-date selection module.
-
-When called from Lisp, DATE is a string and has the same format
-as that covered in the documentation of the `denote' function.
-It is internally processed by `denote-parse-date'.
-
-With optional ID-ONLY as a prefix argument create a link that
-consists of just the identifier.  Else try to also include the
-file's title.  This has the same meaning as in `denote-link'.
-
-(fn &optional DATE ID-ONLY)" t)
-(register-definition-prefixes "denote-journal-extras" '("denote-journal-extras-"))
-
-
-;;; Generated autoloads from denote-org-extras.el
-
-(autoload 'denote-org-extras-link-to-heading "denote-org-extras" "\
-Link to file and then specify a heading to extend the link to.
-
-The resulting link has the following pattern:
-
-[[denote:IDENTIFIER::#ORG-HEADING-CUSTOM-ID]][Description::Heading text]].
-
-Because only Org files can have links to individual headings,
-limit the list of possible files to those which include the .org
-file extension (remember that Denote works with many file types,
-per the user option `denote-file-type').
-
-The user option `denote-org-extras-store-link-to-heading'
-determined whether the `org-store-link' function can save a link
-to the current heading.  Such links look the same as those of
-this command, though the functionality defined herein is
-independent of it.
-
-To only link to a file, use the `denote-link' command.
-
-Also see `denote-org-extras-backlinks-for-heading'." '(org-mode))
-(function-put 'denote-org-extras-link-to-heading 'interactive-only 't)
-(autoload 'denote-org-extras-backlinks-for-heading "denote-org-extras" "\
-Produce backlinks for the current heading.
-This otherwise has the same behaviour as `denote-backlinks'---refer to
-that for the details.
-
-Also see `denote-org-extras-link-to-heading'." t)
-(autoload 'denote-org-extras-extract-org-subtree "denote-org-extras" "\
-Create new Denote note using the current Org subtree as input.
-Remove the subtree from its current file and move its contents
-into a new Denote file (a subtree is a heading with all of its
-contents, including subheadings).
-
-Take the text of the subtree's top level heading and use it as
-the title of the new note.
-
-If the heading has any tags, use them as the keywords of the new
-note.  If the Org file has any #+filetags use them as well (Org's
-filetags are inherited by the headings).  If none of these are
-true and the user option `denote-prompts' includes an entry for
-keywords, then prompt for keywords.  Else do not include any
-keywords.
-
-If the heading has a PROPERTIES drawer, retain it for further
-review.
-
-If the heading's PROPERTIES drawer includes a DATE or CREATED
-property, or there exists a CLOSED statement with a timestamp
-value, use that to derive the date (or date and time) of the new
-note (if there is only a date, the time is taken as 00:00).  If
-more than one of these is present, the order of preference is
-DATE, then CREATED, then CLOSED.  If none of these is present,
-use the current time.  If the `denote-prompts' includes an entry
-for a date, then prompt for a date at this stage (also see
-`denote-date-prompt-use-org-read-date').
-
-For the rest, consult the value of the user option
-`denote-prompts' in the following scenaria:
-
-- Optionally prompt for a subdirectory, otherwise produce the new
-  note in the variable `denote-directory'.
-
-- Optionally prompt for a file signature, otherwise do not use
-  one.
-
-Make the new note an Org file regardless of the value of
-`denote-file-type'." '(org-mode))
-(autoload 'denote-org-extras-convert-links-to-file-type "denote-org-extras" "\
-Convert denote: links to file: links in the current Org buffer.
-Ignore all other link types.  Also ignore links that do not
-resolve to a file in the variable `denote-directory'." '(org-mode))
-(autoload 'denote-org-extras-convert-links-to-denote-type "denote-org-extras" "\
-Convert file: links to denote: links in the current Org buffer.
-Ignore all other link types.  Also ignore file: links that do not
-point to a file with a Denote file name." '(org-mode))
-(autoload 'denote-org-extras-dblock-insert-links "denote-org-extras" "\
-Create Org dynamic block to insert Denote links matching REGEXP.
-
-(fn REGEXP)" '(org-mode))
-(eval-after-load 'org '(progn (org-dynamic-block-define "denote-links" 'denote-org-extras-dblock-insert-links)))
-(autoload 'org-dblock-write:denote-links "denote-org-extras" "\
-Function to update `denote-links' Org Dynamic blocks.
-Used by `org-dblock-update' with PARAMS provided by the dynamic block.
-
-(fn PARAMS)")
-(autoload 'denote-org-extras-dblock-insert-missing-links "denote-org-extras" "\
-Create Org dynamic block to insert Denote links matching REGEXP.
-
-(fn REGEXP)" '(org-mode))
-(eval-after-load 'org '(progn (org-dynamic-block-define "denote-missing-links" 'denote-org-extras-dblock-insert-links)))
-(autoload 'org-dblock-write:denote-missing-links "denote-org-extras" "\
-Function to update `denote-links' Org Dynamic blocks.
-Used by `org-dblock-update' with PARAMS provided by the dynamic block.
-
-(fn PARAMS)")
-(autoload 'denote-org-extras-dblock-insert-backlinks "denote-org-extras" "\
-Create Org dynamic block to insert Denote backlinks to current file." '(org-mode))
-(eval-after-load 'org '(progn (org-dynamic-block-define "denote-backlinks" 'denote-org-extras-dblock-insert-backlinks)))
-(autoload 'org-dblock-write:denote-backlinks "denote-org-extras" "\
-Function to update `denote-backlinks' Org Dynamic blocks.
-Used by `org-dblock-update' with PARAMS provided by the dynamic block.
-
-(fn PARAMS)")
-(autoload 'denote-org-extras-dblock-insert-files "denote-org-extras" "\
-Create Org dynamic block to insert Denote files matching REGEXP.
-Sort the files according to SORT-BY-COMPONENT, which is a symbol
-among `denote-sort-components'.
-
-(fn REGEXP SORT-BY-COMPONENT)" '(org-mode))
-(eval-after-load 'org '(progn (org-dynamic-block-define "denote-files" 'denote-org-extras-dblock-insert-files)))
-(autoload 'org-dblock-write:denote-files "denote-org-extras" "\
-Function to update `denote-files' Org Dynamic blocks.
-Used by `org-dblock-update' with PARAMS provided by the dynamic block.
-
-(fn PARAMS)")
-(register-definition-prefixes "denote-org-extras" '("denote-org-extras-"))
-
-
-;;; Generated autoloads from denote-rename-buffer.el
-
 (defvar denote-rename-buffer-mode nil "\
 Non-nil if Denote-Rename-Buffer mode is enabled.
 See the `denote-rename-buffer-mode' command
@@ -805,8 +720,8 @@ for a description of this minor mode.
 Setting this variable directly does not take effect;
 either customize it (see the info node `Easy Customization')
 or call the function `denote-rename-buffer-mode'.")
-(custom-autoload 'denote-rename-buffer-mode "denote-rename-buffer" nil)
-(autoload 'denote-rename-buffer-mode "denote-rename-buffer" "\
+(custom-autoload 'denote-rename-buffer-mode "denote" nil)
+(autoload 'denote-rename-buffer-mode "denote" "\
 Automatically rename Denote buffers to be easier to read.
 
 A buffer is renamed upon visiting the underlying file.  This
@@ -815,83 +730,21 @@ visited again in a new buffer (files are visited with the command
 `find-file' or related).
 
 This is a global minor mode.  If called interactively, toggle the
-`Denote-Rename-Buffer mode' mode.  If the prefix argument is
-positive, enable the mode, and if it is zero or negative, disable
-the mode.
+`Denote-Rename-Buffer mode' mode.  If the prefix argument is positive,
+enable the mode, and if it is zero or negative, disable the mode.
 
-If called from Lisp, toggle the mode if ARG is `toggle'.  Enable
-the mode if ARG is nil, omitted, or is a positive number.
-Disable the mode if ARG is a negative number.
+If called from Lisp, toggle the mode if ARG is `toggle'.  Enable the
+mode if ARG is nil, omitted, or is a positive number.  Disable the mode
+if ARG is a negative number.
 
 To check whether the minor mode is enabled in the current buffer,
 evaluate `(default-value \\='denote-rename-buffer-mode)'.
 
-The mode's hook is called both when the mode is enabled and when
-it is disabled.
+The mode's hook is called both when the mode is enabled and when it is
+disabled.
 
 (fn &optional ARG)" t)
-(register-definition-prefixes "denote-rename-buffer" '("denote-rename-buffer"))
-
-
-;;; Generated autoloads from denote-silo-extras.el
-
-(autoload 'denote-silo-extras-create-note "denote-silo-extras" "\
-Select SILO and run `denote' in it.
-SILO is a file path from `denote-silo-extras-directories'.
-
-When called from Lisp, SILO is a file system path to a directory.
-
-(fn SILO)" t)
-(autoload 'denote-silo-extras-open-or-create "denote-silo-extras" "\
-Select SILO and run `denote-open-or-create' in it.
-SILO is a file path from `denote-silo-extras-directories'.
-
-When called from Lisp, SILO is a file system path to a directory.
-
-(fn SILO)" t)
-(autoload 'denote-silo-extras-select-silo-then-command "denote-silo-extras" "\
-Select SILO and run Denote COMMAND in it.
-SILO is a file path from `denote-silo-extras-directories', while
-COMMAND is one among `denote-silo-extras-commands'.
-
-When called from Lisp, SILO is a file system path to a directory.
-
-(fn SILO COMMAND)" t)
-(register-definition-prefixes "denote-silo-extras" '("denote-silo-extras-"))
-
-
-;;; Generated autoloads from denote-sort.el
-
-(autoload 'denote-sort-files "denote-sort" "\
-Returned sorted list of Denote FILES.
-
-With COMPONENT as a symbol among `denote-sort-components',
-sort files based on the corresponding file name component.
-
-With COMPONENT as a nil value keep the original date-based
-sorting which relies on the identifier of each file name.
-
-With optional REVERSE as a non-nil value, reverse the sort order.
-
-(fn FILES COMPONENT &optional REVERSE)")
-(autoload 'denote-sort-dired "denote-sort" "\
-Produce Dired dired-buffer with sorted files from variable `denote-directory'.
-When called interactively, prompt for FILES-MATCHING-REGEXP,
-SORT-BY-COMPONENT, and REVERSE.
-
-1. FILES-MATCHING-REGEXP limits the list of Denote files to
-   those matching the provided regular expression.
-
-2. SORT-BY-COMPONENT sorts the files by their file name
-   component (one among `denote-sort-components').
-
-3. REVERSE is a boolean to reverse the order when it is a non-nil value.
-
-When called from Lisp, the arguments are a string, a keyword, and
-a non-nil value, respectively.
-
-(fn FILES-MATCHING-REGEXP SORT-BY-COMPONENT REVERSE)" t)
-(register-definition-prefixes "denote-sort" '("denote-sort-"))
+(register-definition-prefixes "denote" '("denote-"))
 
 ;;; End of scraped data
 
